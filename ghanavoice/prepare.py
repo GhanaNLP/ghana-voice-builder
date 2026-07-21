@@ -60,6 +60,9 @@ def iter_local(input_dir):
 def iter_hf(dataset_id, split, audio_col, text_col, lang_col):
     from datasets import load_dataset
     ds = load_dataset(dataset_id, split=split)
+    # If lang_col isn't a real column, treat it as a single fixed language for every row
+    # (common for single-language datasets: --language-column "Asante Twi").
+    has_lang = lang_col in ds.column_names
     for i, row in enumerate(ds):
         a = row[audio_col]
         wave = torch.from_numpy(np.asarray(a["array"], dtype=np.float32))
@@ -67,7 +70,8 @@ def iter_hf(dataset_id, split, audio_col, text_col, lang_col):
         if sr != SR:
             wave = torchaudio.functional.resample(wave, sr, SR)
         cid = Path(a.get("path") or f"{dataset_id.split('/')[-1]}_{i:06d}").stem
-        yield cid, ("__wave__", wave), row[text_col], str(row[lang_col])
+        language = str(row[lang_col]) if has_lang else lang_col
+        yield cid, ("__wave__", wave), row[text_col], language
 
 
 def main():
