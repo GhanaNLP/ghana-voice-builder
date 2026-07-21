@@ -32,8 +32,13 @@ def main():
     p.add_argument("--language", required=True, help="Language id / iso code / name")
     p.add_argument("--text", required=True, help="Text to speak (raw orthography)")
     p.add_argument("--out", required=True, help="Output .wav path")
-    p.add_argument("--vocoder", default="hifigan", choices=["hifigan", "vocos"])
-    p.add_argument("--vocos-ckpt", default=None, help="Finetuned Vocos checkpoint (path or HF file)")
+    p.add_argument("--vocoder", default="vocos-ghana", choices=["vocos-ghana", "vocos", "hifigan"],
+                   help="vocos-ghana = Ghana-finetuned Vocos (default, best); "
+                        "vocos = plain pretrained; hifigan = universal HiFiGAN")
+    p.add_argument("--vocos-ckpt", default=None, help="Local finetuned Vocos checkpoint (overrides HF download)")
+    p.add_argument("--vocos-repo", default="ghananlpcommunity/ghana-speech-vocos",
+                   help="HF repo to fetch the finetuned Vocos from (for --vocoder vocos-ghana)")
+    p.add_argument("--vocos-file", default="last.pt", help="Finetuned Vocos filename in the HF repo")
     p.add_argument("--n-timesteps", type=int, default=10)
     p.add_argument("--temperature", type=float, default=0.3)
     p.add_argument("--length-scale", type=float, default=1.0)
@@ -44,7 +49,8 @@ def main():
     lid = resolve(a.language)
 
     model = MatchaTTS.load_from_checkpoint(a.model, map_location=device).to(device).eval()
-    vocode = get_vocoder(a.vocoder, device, a.vocos_ckpt)
+    vocode = get_vocoder(a.vocoder, device, vocos_ckpt=a.vocos_ckpt,
+                         vocos_repo=a.vocos_repo, vocos_file=a.vocos_file)
 
     seq, _ = text_to_sequence(twi_cleaners(a.text), ["twi_phonemes"])
     tokens = [lang_token_id(lid)] + intersperse(seq, 0)

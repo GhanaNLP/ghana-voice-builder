@@ -72,16 +72,23 @@ Audio: mono WAV, any sample rate (resampled internally). ~15+ min per language r
 
 ---
 
-## Base model
-Default: [`ghananlpcommunity/ghana-speech-nano-langtok`](https://huggingface.co/ghananlpcommunity/ghana-speech-nano-langtok)
-(downloaded automatically on first `train`). Override with `--base-model`.
+## Base model & vocoder
+- **Acoustic base model** (finetuned by `train`): [`ghananlpcommunity/ghana-speech-nano-langtok`](https://huggingface.co/ghananlpcommunity/ghana-speech-nano-langtok),
+  downloaded automatically. Override with `--base-model`.
+- **Vocoder** (mel → waveform at synthesis): `synthesize` uses the **Ghana-finetuned Vocos**
+  ([`ghananlpcommunity/ghana-speech-vocos`](https://huggingface.co/ghananlpcommunity/ghana-speech-vocos))
+  by default — it renders these voices most naturally, and is pulled from HF automatically.
+  Use `--vocoder vocos` for the plain pretrained Vocos, or `--vocoder hifigan` for the universal
+  HiFiGAN (no download auth needed). A local finetuned Vocos can be passed with `--vocos-ckpt`.
+
+> Note: these HF model repos may be private; make them public (or set `HF_TOKEN`) for others to
+> download the base model / finetuned vocoder.
 
 ## Status
 - [x] 42-language registry, vendored Matcha engine
 - [x] `ghanavoice prepare` — phonemize + mel + filter + stats (HF & local)
 - [x] `ghanavoice train` — finetune loop + checkpointing + early stopping (+ optional HF push)
-- [x] `ghanavoice synthesize` — inference (HiFiGAN default; Vocos, incl. finetuned)
-- [ ] Optional: standalone `ghanavoice finetune-vocoder` command for extra naturalness
+- [x] `ghanavoice synthesize` — inference; **Ghana-finetuned Vocos by default** (pretrained Vocos / HiFiGAN optional)
 
 ## License / credits
 Matcha-TTS code © its authors (see vendored headers). Base models by GhanaNLP Community.

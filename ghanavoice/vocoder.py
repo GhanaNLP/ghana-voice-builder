@@ -10,6 +10,10 @@ from matcha.utils.utils import get_user_data_dir, assert_model_downloaded
 
 HIFIGAN_UNIV_URL = "https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/g_02500000"
 
+# Ghana-finetuned Vocos vocoder (best sounding for these voices). Pulled from HF on demand.
+GHANA_VOCOS_REPO = "ghananlpcommunity/ghana-speech-vocos"
+GHANA_VOCOS_FILE = "last.pt"
+
 
 def load_hifigan(device):
     from matcha.hifigan.config import v1
@@ -34,21 +38,24 @@ def load_hifigan(device):
     return vocode
 
 
-def load_vocos(device, ckpt=None):
-    """ckpt: None -> pretrained BSC-LT/vocos-mel-22khz; else a path/HF file to a Ghana-finetuned
-    checkpoint saved as {"backbone":..., "head":..., "pretrained": <repo>}."""
+def load_vocos(device, ft_ckpt=None, ft_repo=None, ft_file=GHANA_VOCOS_FILE):
+    """Build a Vocos vocoder.
+
+    - ft_ckpt: local path to a Ghana-finetuned checkpoint {backbone, head, pretrained}
+    - ft_repo: HF repo id to download the finetuned checkpoint (ft_file) from
+    - neither: the plain pretrained BSC-LT/vocos-mel-22khz
+    """
     import yaml
-    from pathlib import Path
     from huggingface_hub import hf_hub_download
     from vocos.pretrained import instantiate_class
 
     pretrained = "BSC-LT/vocos-mel-22khz"
     ft_state = None
-    if ckpt is not None:
-        ck_path = ckpt if Path(ckpt).exists() else hf_hub_download(*ckpt.split(":", 1)) if ":" in ckpt else ckpt
-        ft = torch.load(ck_path, map_location=device, weights_only=False)
-        pretrained = ft.get("pretrained", pretrained)
-        ft_state = ft
+    if ft_ckpt is None and ft_repo is not None:
+        ft_ckpt = hf_hub_download(ft_repo, ft_file, repo_type="model")
+    if ft_ckpt is not None:
+        ft_state = torch.load(ft_ckpt, map_location=device, weights_only=False)
+        pretrained = ft_state.get("pretrained", pretrained)
 
     cfg = yaml.safe_load(open(hf_hub_download(pretrained, "config.yaml"), encoding="utf-8"))
     state = torch.load(hf_hub_download(pretrained, "pytorch_model.bin"), map_location=device, weights_only=False)
@@ -67,9 +74,13 @@ def load_vocos(device, ckpt=None):
     return vocode
 
 
-def get_vocoder(name, device, vocos_ckpt=None):
+def get_vocoder(name, device, vocos_ckpt=None, vocos_repo=GHANA_VOCOS_REPO, vocos_file=GHANA_VOCOS_FILE):
+    """name: 'vocos-ghana' (finetuned, default), 'vocos' (pretrained), 'hifigan'."""
     if name == "hifigan":
         return load_hifigan(device)
     if name == "vocos":
-        return load_vocos(device, vocos_ckpt)
-    raise ValueError(f"Unknown vocoder '{name}' (use 'hifigan' or 'vocos')")
+        return load_vocos(device)  # plain pretrained
+    if name == "vocos-ghana":
+        # local checkpoint wins; otherwise download the finetuned one from HF
+        return load_vocos(device, ft_ckpt=vocos_ckpt, ft_repo=None if vocos_ckpt else vocos_repo, ft_file=vocos_file)
+    raise ValueError(f"Unknown vocoder '{name}' (use 'vocos-ghana', 'vocos', or 'hifigan')")
