@@ -9,7 +9,6 @@ import torch
 from torch.utils.data import Dataset
 
 from matcha.text import text_to_sequence
-from matcha.text.symbols import lang_token_id
 from matcha.utils.model import fix_len_compatibility
 from matcha.utils.utils import intersperse
 
@@ -39,7 +38,8 @@ class FinetuneDataset(Dataset):
         seq, _ = text_to_sequence(phon, ["twi_phonemes"])  # passthrough (already phonemized)
         if self.add_blank:
             seq = intersperse(seq, 0)
-        seq = [lang_token_id(lid)] + seq  # language token at the front
+        # No input language token — language is conditioned via the speaker slot (spk=lang id).
+        # This keeps the model sherpa-onnx-native (espeak-free deployment).
         x = torch.tensor(seq, dtype=torch.long)
 
         mel = torch.from_numpy(np.load(self.mels_dir / f"{clip_id}.npy").astype("float32"))

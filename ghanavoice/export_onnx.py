@@ -111,10 +111,10 @@ def main():
         "n_base_symbols": N_BASE_SYMBOLS, "n_languages": N_LANGS, "n_vocab": len(symbols),
         "acoustic_inputs": ["x (token ids)", "x_lengths", "scales=[temperature,length_scale]", "spks=[lang_id]"],
         "tokenization": (
-            "text -> twi_cleaners (lfn IPA) -> map chars to ids via tokens.txt -> intersperse blank(0) "
-            "-> prepend language token id (N_BASE_SYMBOLS + lang_id). spks = [lang_id]."
+            "text -> twi_cleaners (lfn IPA) -> map chars to ids via tokens.txt -> intersperse blank(0). "
+            "Language is selected by the speaker slot: spks = [lang_id]. No input language token, so "
+            "sherpa-onnx's built-in Matcha frontend (espeak-ng lfn voice + tokens.txt + add_blank) reproduces it."
         ),
-        "lang_token_id_formula": f"{N_BASE_SYMBOLS} + lang_id",
     }
     meta["vocoder_note"] = (
         "vocos-22khz-univ.onnx outputs STFT (mag, x, y); reconstruct waveform via ISTFT "
@@ -138,7 +138,6 @@ import argparse
 from pathlib import Path
 import numpy as np, onnxruntime as ort, soundfile as sf, torch
 from matcha.text import text_to_sequence
-from matcha.text.symbols import lang_token_id
 from matcha.text.cleaners import twi_cleaners
 from matcha.utils.utils import intersperse
 from ghanavoice.languages import resolve
@@ -151,7 +150,7 @@ _vo = ort.InferenceSession(str(HERE / "vocos-22khz-univ.onnx"))
 def synth(text, language, temperature=0.3, length_scale=1.0):
     lid = resolve(language)
     seq, _ = text_to_sequence(twi_cleaners(text), ["twi_phonemes"])
-    tokens = [lang_token_id(lid)] + intersperse(seq, 0)
+    tokens = intersperse(seq, 0)  # no language token; language via spks slot
     mel, _ = _ac.run(["mel", "mel_lengths"], {
         "x": np.array([tokens], np.int64), "x_lengths": np.array([len(tokens)], np.int64),
         "scales": np.array([temperature, length_scale], np.float32), "spks": np.array([lid], np.int64)})

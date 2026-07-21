@@ -87,6 +87,8 @@ def main():
                    help="Column with the language, OR a fixed language for the whole dataset")
     p.add_argument("--min-duration", type=float, default=1.0)
     p.add_argument("--max-duration", type=float, default=15.0)
+    p.add_argument("--max-hours", type=float, default=None,
+                   help="Optional cap on hours kept per language (e.g. 5 to use ~5h).")
     p.add_argument("--val-per-lang", type=int, default=2)
     p.add_argument("--seed", type=int, default=1234)
     a = p.parse_args()
@@ -128,6 +130,9 @@ def main():
 
         dur = wave.shape[-1] / SR
         if dur < a.min_duration or dur > a.max_duration:
+            skipped += 1
+            continue
+        if a.max_hours is not None and secs_by_lang[lid] >= a.max_hours * 3600:
             skipped += 1
             continue
 
