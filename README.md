@@ -9,9 +9,6 @@ Built on [Matcha-TTS](https://github.com/shivammehta25/Matcha-TTS) (flow-matchin
 with a shared phonemizer + per-language conditioning so a single base model covers all languages.
 The model code is **vendored** in this repo — no external model dependency to install.
 
-> Status: **under construction.** The base model + engine are in place; the `prepare` → `train`
-> → `synthesize` CLI is being built and validated incrementally (see Roadmap).
-
 ---
 
 ## Why finetune instead of train from scratch?
@@ -79,12 +76,12 @@ Audio: mono WAV, any sample rate (resampled internally). ~15+ min per language r
 Default: [`ghananlpcommunity/ghana-speech-nano-langtok`](https://huggingface.co/ghananlpcommunity/ghana-speech-nano-langtok)
 (downloaded automatically on first `train`). Override with `--base-model`.
 
-## Roadmap
-- [x] Repo scaffold, 42-language registry, vendored Matcha engine
-- [ ] `ghanavoice prepare` — phonemize + mel + filter + stats (HF & local)
-- [ ] `ghanavoice train` — finetune loop + checkpointing + early stopping
-- [ ] `ghanavoice synthesize` — inference (HiFiGAN vocoder; optional finetuned Vocos)
-- [ ] Optional: vocoder finetuning for extra naturalness
+## Status
+- [x] 42-language registry, vendored Matcha engine
+- [x] `ghanavoice prepare` — phonemize + mel + filter + stats (HF & local)
+- [x] `ghanavoice train` — finetune loop + checkpointing + early stopping (+ optional HF push)
+- [x] `ghanavoice synthesize` — inference (HiFiGAN default; Vocos, incl. finetuned)
+- [ ] Optional: standalone `ghanavoice finetune-vocoder` command for extra naturalness
 
 ## License / credits
 Matcha-TTS code © its authors (see vendored headers). Base models by GhanaNLP Community.

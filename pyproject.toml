@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "Cython", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghana-voice-builder"
+version = "0.1.0"
+description = "Finetune a multilingual Ghanaian-language TTS base model on a small dataset."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "numpy",
+    "soundfile",
+    "matplotlib",
+    "phonemizer",
+    "datasets>=2.14",
+    "huggingface_hub",
+    "tqdm",
+    "pyyaml",
+    "vocos",
+    "wget",
+    "omegaconf",
+]
+
+[project.scripts]
+ghanavoice = "ghanavoice.cli:main"
+
+[tool.setuptools]
+packages = [
+    "ghanavoice",
+    "matcha", "matcha.models", "matcha.models.components",
+    "matcha.text", "matcha.utils", "matcha.utils.monotonic_align", "matcha.hifigan",
+]
