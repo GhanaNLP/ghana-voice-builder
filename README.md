@@ -26,7 +26,7 @@ Run `ghanavoice languages` for the full list. Each has a fixed id used for condi
 ## Quickstart (target UX)
 
 ```bash
-git clone https://github.com/michsethowusu/ghana-voice-builder
+git clone https://github.com/GhanaNLP/ghana-voice-builder
 cd ghana-voice-builder
 pip install -e .            # installs deps + builds the alignment extension
 
