@@ -14,7 +14,7 @@ The model code is **vendored** in this repo — no external model dependency to 
 ## Why finetune instead of train from scratch?
 The base model has already learned Ghanaian phonetics, prosody, and 42 language identities from
 hundreds of hours of speech. Finetuning adapts it to *your* speaker/dialect/recording conditions
-with as little as ~15–30 minutes of audio per language — far less data and compute than training
+with about ~3–5 hours of audio per language — far less data and compute than training
 from zero.
 
 ## Supported languages
@@ -68,7 +68,7 @@ Columns: `audio_path | text | language`. `language` accepts an id, ISO code, or 
 **HuggingFace dataset:** any dataset with `audio`, `text`, and a `language` column (column names
 configurable). See `ghanavoice prepare --help`.
 
-Audio: mono WAV, any sample rate (resampled internally). ~15+ min per language recommended.
+Audio: mono WAV, any sample rate (resampled internally). ~3–5 hours per language recommended.
 
 ---
 
