@@ -52,6 +52,12 @@ LANGUAGES = {
 }
 
 N_LANGUAGES = len(LANGUAGES)
+N_BASE_SYMBOLS = 178  # phoneme symbols in the base model; language tokens occupy ids 178..219
+
+
+def lang_token_id(language):
+    """Input-token id for a language — prepended to the phoneme sequence at train/inference."""
+    return N_BASE_SYMBOLS + resolve(language)
 
 # Lookup helpers: accept an id, the registry name, the iso code, or the human name
 # (case-insensitive) so users can specify a language however is convenient.

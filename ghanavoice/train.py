@@ -32,9 +32,9 @@ def resolve_base_ckpt(base_model):
         return base_model
     from huggingface_hub import hf_hub_download, list_repo_files
     files = list_repo_files(base_model, repo_type="model")
-    # Prefer the no-langtok variant (speaker-slot-only conditioning) — no input language token,
-    # so exports are sherpa-onnx-native / espeak-free. Fall back to other layouts.
-    for cand in ("no-langtok/last.ckpt", "langtok/last.ckpt", "checkpoints/last.ckpt", "last.ckpt"):
+    # Prefer the langtok variant (per-language token + speaker-slot conditioning) — the base that
+    # produces the best-sounding voices. Fall back to other layouts.
+    for cand in ("langtok/last.ckpt", "no-langtok/last.ckpt", "checkpoints/last.ckpt", "last.ckpt"):
         if cand in files:
             return hf_hub_download(base_model, cand, repo_type="model")
     ckpts = [f for f in files if f.endswith(".ckpt")]

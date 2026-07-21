@@ -19,7 +19,7 @@ from matcha.models.matcha_tts import MatchaTTS  # noqa: E402
 from matcha.text import text_to_sequence  # noqa: E402
 from matcha.text.cleaners import twi_cleaners  # noqa: E402
 from matcha.utils.utils import intersperse  # noqa: E402
-from ghanavoice.languages import resolve, name as lang_name  # noqa: E402
+from ghanavoice.languages import resolve, lang_token_id, name as lang_name  # noqa: E402
 from ghanavoice.vocoder import get_vocoder  # noqa: E402
 
 SR = 22050
@@ -52,7 +52,7 @@ def main():
                          vocos_repo=a.vocos_repo, vocos_file=a.vocos_file)
 
     seq, _ = text_to_sequence(twi_cleaners(a.text), ["twi_phonemes"])
-    tokens = intersperse(seq, 0)  # no language token; language via spk slot
+    tokens = [lang_token_id(lid)] + intersperse(seq, 0)  # language token + speaker-slot conditioning
     x = torch.tensor(tokens, dtype=torch.long, device=device)[None]
     x_len = torch.tensor([x.shape[-1]], dtype=torch.long, device=device)
     spks = torch.tensor([lid], dtype=torch.long, device=device)

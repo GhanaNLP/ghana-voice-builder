@@ -188,7 +188,7 @@ def main():
     # Friendly heads-up (not a block): we recommend ~5h per language for a good voice.
     low = {lid: secs / 3600 for lid, secs in secs_by_lang.items() if secs / 3600 < RECOMMENDED_HOURS}
     if low:
-        print(f"\n[prepare] 👋 heads-up: the recommended minimum is ~{RECOMMENDED_HOURS:.0f} hours "
+        print(f"\n[prepare] heads-up: the recommended minimum is ~{RECOMMENDED_HOURS:.0f} hours "
               f"per language for the best-sounding voice. These are below that:")
         for lid in sorted(low, key=int):
             print(f"           • {lang_name(lid):<18} {low[lid]:.2f}h")
