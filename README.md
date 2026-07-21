@@ -14,7 +14,7 @@ The model code is **vendored** in this repo — no external model dependency to 
 ## Why finetune instead of train from scratch?
 The base model has already learned Ghanaian phonetics, prosody, and 42 language identities from
 hundreds of hours of speech. Finetuning adapts it to *your* speaker/dialect/recording conditions
-with about ~3–5 hours of audio per language — far less data and compute than training
+with about ~5 hours of audio per language (recommended minimum) — far less data and compute than training
 from zero.
 
 ## Supported languages
@@ -40,6 +40,9 @@ ghanavoice train --data ./prepped --out ./my_voice
 # 3. Synthesize
 ghanavoice synthesize --model ./my_voice/best.ckpt \
     --language "Asante Twi" --text "Akwaaba!" --out hello.wav
+
+# 4. (optional) Export to ONNX for on-device / sherpa-onnx deployment
+ghanavoice export-onnx --model ./my_voice/best.ckpt --out ./onnx
 ```
 
 Multiple languages: just include rows for each language in your data — the base model handles
@@ -68,26 +71,44 @@ Columns: `audio_path | text | language`. `language` accepts an id, ISO code, or 
 **HuggingFace dataset:** any dataset with `audio`, `text`, and a `language` column (column names
 configurable). See `ghanavoice prepare --help`.
 
-Audio: mono WAV, any sample rate (resampled internally). ~3–5 hours per language recommended.
+Audio: mono WAV, any sample rate (resampled internally). **~5 hours per language recommended** (less works — you just get a friendly heads-up).
 
 ---
 
 ## Base model & vocoder
 - **Acoustic base model** (finetuned by `train`): [`ghananlpcommunity/ghana-speech-nano`](https://huggingface.co/ghananlpcommunity/ghana-speech-nano),
   downloaded automatically. Override with `--base-model`.
-- **Vocoder** (mel → waveform at synthesis): `synthesize` uses the **Ghana-finetuned Vocos**
-  ([`ghananlpcommunity/ghana-speech-vocos`](https://huggingface.co/ghananlpcommunity/ghana-speech-vocos))
-  by default — it renders these voices most naturally, and is pulled from HF automatically.
-  Use `--vocoder vocos` for the plain pretrained Vocos, or `--vocoder hifigan` for the universal
-  HiFiGAN (no download auth needed). A local finetuned Vocos can be passed with `--vocos-ckpt`.
+- **Vocoder** (mel → waveform at synthesis): `synthesize` uses the **pretrained Vocos**
+  (`BSC-LT/vocos-mel-22khz`) by default — downloaded automatically. Use `--vocoder hifigan` for the
+  universal HiFiGAN (no download auth needed), or `--vocoder vocos-ghana` for a Ghana-finetuned Vocos.
 
-Both are public and downloaded automatically — no setup needed.
+The base model is public and downloaded automatically — no setup needed.
+
+## Deploy (ONNX / sherpa-onnx)
+`ghanavoice export-onnx --model my_voice/best.ckpt --out onnx/` writes a self-contained bundle:
+```
+onnx/
+├── acoustic.onnx           # Matcha acoustic model (tagged with sherpa-onnx metadata)
+├── vocos-22khz-univ.onnx   # sherpa-onnx's pre-built universal Vocos vocoder (mel → STFT)
+├── tokens.txt              # symbol → id
+├── metadata.json           # mel config, language ids, tokenization recipe
+└── onnx_infer.py           # runnable demo: text → audio via ONNX Runtime
+```
+Run it anywhere ONNX Runtime is available (Python demo, or embed in an app):
+```bash
+python onnx/onnx_infer.py --language "Asante Twi" --text "Akwaaba!" --out hello.wav
+```
+Note: the vocoder ONNX emits the STFT (`mag,x,y`); the final **ISTFT** is done by the runtime
+(sherpa-onnx does it in C++; `onnx_infer.py` does it in Python). The text frontend (lfn phonemes
++ a language token) is ours, so tokenization follows `metadata.json`/`onnx_infer.py` rather than
+sherpa-onnx's built-in Matcha frontend.
 
 ## Status
 - [x] 42-language registry, vendored Matcha engine
 - [x] `ghanavoice prepare` — phonemize + mel + filter + stats (HF & local)
 - [x] `ghanavoice train` — finetune loop + checkpointing + early stopping (+ optional HF push)
-- [x] `ghanavoice synthesize` — inference; **Ghana-finetuned Vocos by default** (pretrained Vocos / HiFiGAN optional)
+- [x] `ghanavoice synthesize` — inference; **pretrained Vocos by default** (HiFiGAN / finetuned Vocos optional)
+- [x] `ghanavoice export-onnx` — export to ONNX for on-device / sherpa-onnx deployment
 
 ## License / credits
 Matcha-TTS code © its authors (see vendored headers). Base models by GhanaNLP Community.

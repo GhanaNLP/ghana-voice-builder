@@ -3,6 +3,7 @@
     ghanavoice prepare     ...   prepare data (local folder or HF dataset)
     ghanavoice train       ...   finetune the base model
     ghanavoice synthesize  ...   generate speech
+    ghanavoice export-onnx ...   export to ONNX (sherpa-onnx / on-device)
     ghanavoice languages         list supported languages
 """
 import sys
@@ -30,6 +31,8 @@ def main():
         from ghanavoice.train import main as m; m()
     elif cmd in ("synthesize", "synth", "infer"):
         from ghanavoice.infer import main as m; m()
+    elif cmd in ("export-onnx", "export_onnx", "onnx"):
+        from ghanavoice.export_onnx import main as m; m()
     elif cmd == "languages":
         _list_languages()
     else:

@@ -100,9 +100,12 @@ def main():
         source = iter_hf(a.hf_dataset, a.hf_split, a.audio_column, a.text_column, a.language_column)
 
     by_lang = defaultdict(list)
+    secs_by_lang = defaultdict(float)
     mel_sum = mel_sqsum = mel_count = 0.0
     kept = skipped = 0
     langs_seen = set()
+
+    RECOMMENDED_HOURS = 5.0
 
     for cid, audio_ref, text, language in tqdm(source, desc="prepare"):
         # language may be a per-row value or (for local) a fixed column; resolve flexibly
@@ -137,6 +140,7 @@ def main():
         np.save(out / "mels" / f"{cid}.npy", mel)
         mel_sum += float(mel.sum()); mel_sqsum += float((mel ** 2).sum()); mel_count += mel.size
         by_lang[lid].append((cid, lid, phon))
+        secs_by_lang[lid] += dur
         kept += 1
 
     if kept == 0:
@@ -169,10 +173,22 @@ def main():
     }
     (out / "stats.json").write_text(json.dumps(stats, indent=2, ensure_ascii=False))
 
+    total_hours = sum(secs_by_lang.values()) / 3600
     print(f"\n[prepare] kept={kept} skipped={skipped}")
-    print(f"[prepare] train={len(train_rows)} val={len(val_rows)} across {len(langs_seen)} language(s)")
+    print(f"[prepare] train={len(train_rows)} val={len(val_rows)} across {len(langs_seen)} language(s), "
+          f"{total_hours:.2f}h total")
     print(f"[prepare] mel_mean={mel_mean:.4f} mel_std={mel_std:.4f}")
     print(f"[prepare] -> {out}")
+
+    # Friendly heads-up (not a block): we recommend ~5h per language for a good voice.
+    low = {lid: secs / 3600 for lid, secs in secs_by_lang.items() if secs / 3600 < RECOMMENDED_HOURS}
+    if low:
+        print(f"\n[prepare] 👋 heads-up: the recommended minimum is ~{RECOMMENDED_HOURS:.0f} hours "
+              f"per language for the best-sounding voice. These are below that:")
+        for lid in sorted(low, key=int):
+            print(f"           • {lang_name(lid):<18} {low[lid]:.2f}h")
+        print("           You can still go ahead and train — it'll work, quality may just be lower. "
+              "More data helps.")
 
 
 if __name__ == "__main__":

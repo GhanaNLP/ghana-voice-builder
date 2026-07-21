@@ -32,9 +32,9 @@ def main():
     p.add_argument("--language", required=True, help="Language id / iso code / name")
     p.add_argument("--text", required=True, help="Text to speak (raw orthography)")
     p.add_argument("--out", required=True, help="Output .wav path")
-    p.add_argument("--vocoder", default="vocos-ghana", choices=["vocos-ghana", "vocos", "hifigan"],
-                   help="vocos-ghana = Ghana-finetuned Vocos (default, best); "
-                        "vocos = plain pretrained; hifigan = universal HiFiGAN")
+    p.add_argument("--vocoder", default="vocos", choices=["vocos", "hifigan", "vocos-ghana"],
+                   help="vocos = pretrained Vocos (default); hifigan = universal HiFiGAN "
+                        "(no download auth); vocos-ghana = Ghana-finetuned Vocos")
     p.add_argument("--vocos-ckpt", default=None, help="Local finetuned Vocos checkpoint (overrides HF download)")
     p.add_argument("--vocos-repo", default="ghananlpcommunity/ghana-speech-vocos",
                    help="HF repo to fetch the finetuned Vocos from (for --vocoder vocos-ghana)")
