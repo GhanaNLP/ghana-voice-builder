@@ -32,7 +32,8 @@ def resolve_base_ckpt(base_model):
         return base_model
     from huggingface_hub import hf_hub_download, list_repo_files
     files = list_repo_files(base_model, repo_type="model")
-    for cand in ("checkpoints/last.ckpt", "last.ckpt"):
+    # Prefer the language-token variant; fall back to older layouts.
+    for cand in ("langtok/last.ckpt", "checkpoints/last.ckpt", "last.ckpt"):
         if cand in files:
             return hf_hub_download(base_model, cand, repo_type="model")
     ckpts = [f for f in files if f.endswith(".ckpt")]
@@ -50,7 +51,7 @@ def main():
     p = argparse.ArgumentParser(description="Finetune the Ghana Voice base model on prepped data.")
     p.add_argument("--data", required=True, help="Prepped directory (from `ghanavoice prepare`)")
     p.add_argument("--out", required=True, help="Output directory for checkpoints")
-    p.add_argument("--base-model", default="ghananlpcommunity/ghana-speech-nano-langtok",
+    p.add_argument("--base-model", default="ghananlpcommunity/ghana-speech-nano",
                    help="HF repo id or local .ckpt to warm-start from")
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-4)
