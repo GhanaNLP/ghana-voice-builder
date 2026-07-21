@@ -1,18 +1,20 @@
-"""Export a finetuned Ghana Voice model to ONNX for on-device / sherpa-onnx deployment.
+"""Export a finetuned Ghana Voice model to a sherpa-onnx bundle for espeak-free, on-device TTS.
 
-Produces (in --out):
-  acoustic.onnx          Matcha acoustic model: (x, x_lengths, scales[temp,length_scale], spks) -> mel
-  vocos-22khz-univ.onnx  sherpa-onnx's pre-built universal Vocos vocoder: mel -> wav (22.05 kHz)
-  tokens.txt      symbol<TAB>id   (how text characters map to token ids)
-  metadata.json   mel config, sample rate, language ids, and the tokenization recipe
+Produces (in --out) a bundle sherpa-onnx runs end-to-end with NO espeak pip/apt dependency
+(sherpa-onnx has espeak-ng compiled in and phonemizes using the bundled espeak-ng-data/):
 
-Note on sherpa-onnx: the two .onnx graphs run under ONNX Runtime (that's what sherpa-onnx's
-vocoder runner uses). Our text frontend (lfn phonemizer + a language token + blank interspersing)
-is non-standard, so text->token must be done with the recipe in metadata.json / `onnx_infer.py`
-rather than sherpa-onnx's built-in Matcha frontend.
+  acoustic.onnx           Matcha acoustic model (tagged with sherpa-onnx metadata: voice=lfn, ...)
+  vocos-22khz-univ.onnx   sherpa-onnx's pre-built universal Vocos vocoder
+  tokens.txt              symbol -> id (lfn/base symbol set)
+  espeak-ng-data/         espeak-ng data incl. the lfn voice (so no system espeak is needed)
+  sherpa_infer.py         espeak-free demo using sherpa_onnx.OfflineTts
+  metadata.json           config + language-id table
+
+At synthesis, pick the language via the speaker slot: sherpa `tts.generate(text, sid=<lang_id>)`.
 """
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import torch
@@ -24,149 +26,131 @@ def _load(*a, **k):
 torch.load = _load
 
 from matcha.models.matcha_tts import MatchaTTS  # noqa: E402
-from matcha.text.symbols import symbols, lang_token_id, N_BASE_SYMBOLS, N_LANGS  # noqa: E402
+from ghanavoice.languages import resolve, name as lang_name  # noqa: E402
 
-SR, NFFT, NMELS, HOP, WIN, FMIN, FMAX = 22050, 1024, 80, 256, 1024, 0, 8000
+SR, NMELS = 22050, 80
+SHERPA_VOCODER = ("k2-fsa/sherpa-onnx-models", "6eebd0a85f1be93dd7e9bdb461efbdff6d193f04",
+                  "vocoder-models/vocos-22khz-univ.onnx")
+FRONTEND_REPO = "ghananlpcommunity/nano-twi"  # reuse its lfn tokens.txt + espeak-ng-data
 
 
-def export_acoustic(model, out_path, n_timesteps, opset):
-    def onnx_forward(x, x_lengths, scales, spks=None):
-        out = model.synthesise(x, x_lengths, n_timesteps, scales[0], spks, scales[1])
+def export_acoustic(model, out_path, n_timesteps, lang_id, opset=17):
+    # sherpa-onnx's Matcha runner is single-speaker (no `spks` input). A finetune targets one
+    # language, so we bake that language's speaker-slot embedding in as a constant -> the ONNX
+    # is a plain single-speaker Matcha model, exactly like the reference bundle.
+    spk_const = torch.tensor([lang_id], dtype=torch.long)
+
+    def onnx_forward(x, x_lengths, scales):
+        out = model.synthesise(x, x_lengths, n_timesteps, scales[0], spk_const, scales[1])
         return out["mel"], out["mel_lengths"]
     model.forward = onnx_forward
     x = torch.randint(1, 50, (1, 40), dtype=torch.long)
-    x_lengths = torch.LongTensor([40])
-    scales = torch.Tensor([0.3, 1.0])
-    spks = torch.LongTensor([2])
     model.to_onnx(
-        str(out_path), (x, x_lengths, scales, spks),
-        input_names=["x", "x_lengths", "scales", "spks"],
-        output_names=["mel", "mel_lengths"],
+        str(out_path), (x, torch.LongTensor([40]), torch.Tensor([0.3, 1.0])),
+        input_names=["x", "x_lengths", "scales"], output_names=["mel", "mel_lengths"],
         dynamic_axes={"x": {0: "b", 1: "t"}, "x_lengths": {0: "b"},
-                      "mel": {0: "b", 2: "t"}, "mel_lengths": {0: "b"}, "spks": {0: "b"}},
+                      "mel": {0: "b", 2: "t"}, "mel_lengths": {0: "b"}},
         opset_version=opset, export_params=True, do_constant_folding=True,
     )
 
 
-# sherpa-onnx ships a pre-built, universal Vocos vocoder ONNX (mel->wav, 22.05 kHz). We reuse it
-# rather than exporting our own (Vocos' ISTFT head doesn't export cleanly), which also guarantees
-# sherpa-onnx compatibility.
-SHERPA_VOCODER_REPO = "k2-fsa/sherpa-onnx-models"
-SHERPA_VOCODER_REV = "6eebd0a85f1be93dd7e9bdb461efbdff6d193f04"
-SHERPA_VOCODER_FILE = "vocoder-models/vocos-22khz-univ.onnx"
-
-
-def fetch_sherpa_vocoder(out_dir):
-    import shutil
-    from huggingface_hub import hf_hub_download
-    p = hf_hub_download(SHERPA_VOCODER_REPO, SHERPA_VOCODER_FILE, revision=SHERPA_VOCODER_REV, repo_type="model")
-    dst = out_dir / "vocos-22khz-univ.onnx"
-    shutil.copy(p, dst)
-    return dst
-
-
-def add_sherpa_metadata(acoustic_path):
-    """Tag the acoustic ONNX with the metadata sherpa-onnx reads to recognize a Matcha model."""
+def add_sherpa_metadata(acoustic_path, n_speakers, n_timesteps, language="multi"):
     import onnx
     m = onnx.load(str(acoustic_path))
     tags = {
-        "model_type": "matcha", "sample_rate": str(SR), "n_speakers": str(N_LANGS),
-        "add_blank": "1", "voice": "lfn", "version": "1", "language": "multi",
-        "comment": "ghana-voice-builder; frontend = lfn phonemes + language-token prepend (see metadata.json)",
+        "model_type": "matcha-tts", "language": language, "voice": "lfn",
+        "has_espeak": "1", "jieba": "0", "n_speakers": str(n_speakers),
+        "sample_rate": str(SR), "version": "1", "pad_id": "0",
+        "use_icefall": "0", "use_eos_bos": "0", "num_ode_steps": str(n_timesteps),
+        "model_author": "GhanaNLP", "comment": "Ghana Voice Builder",
     }
     for k, v in tags.items():
         e = m.metadata_props.add(); e.key = k; e.value = v
     onnx.save(m, str(acoustic_path))
 
 
+def fetch(out_dir):
+    """Download the pre-built Vocos vocoder + the lfn frontend (tokens.txt + espeak-ng-data)."""
+    from huggingface_hub import hf_hub_download, list_repo_files
+    # vocoder
+    repo, rev, f = SHERPA_VOCODER
+    shutil.copy(hf_hub_download(repo, f, revision=rev, repo_type="model"), out_dir / "vocos-22khz-univ.onnx")
+    # frontend: tokens.txt + espeak-ng-data (identical lfn setup)
+    shutil.copy(hf_hub_download(FRONTEND_REPO, "sherpa-onnx/tokens.txt", repo_type="model"), out_dir / "tokens.txt")
+    for rf in list_repo_files(FRONTEND_REPO, repo_type="model"):
+        if rf.startswith("sherpa-onnx/espeak-ng-data/"):
+            dst = out_dir / rf[len("sherpa-onnx/"):]
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(hf_hub_download(FRONTEND_REPO, rf, repo_type="model"), dst)
+
+
 def main():
-    p = argparse.ArgumentParser(description="Export a Ghana Voice model to ONNX (sherpa-onnx ready).")
+    p = argparse.ArgumentParser(description="Export a Ghana Voice model to a sherpa-onnx (espeak-free) bundle.")
     p.add_argument("--model", required=True, help="Finetuned (or base) .ckpt")
-    p.add_argument("--out", required=True, help="Output directory for the ONNX bundle")
+    p.add_argument("--out", required=True, help="Output bundle directory")
     p.add_argument("--n-timesteps", type=int, default=10)
-    p.add_argument("--opset", type=int, default=17, help="ONNX opset (>=17 for Vocos ISTFT)")
-    p.add_argument("--no-vocoder", action="store_true", help="Export only the acoustic model")
+    p.add_argument("--opset", type=int, default=17)
+    p.add_argument("--language", required=True,
+                   help="The language this model was finetuned on (id / iso / name). "
+                        "Its speaker-slot embedding is baked into the ONNX.")
     a = p.parse_args()
 
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    lid = resolve(a.language)
     model = MatchaTTS.load_from_checkpoint(a.model, map_location="cpu").eval()
 
-    print("[export] acoustic -> acoustic.onnx")
-    export_acoustic(model, out / "acoustic.onnx", a.n_timesteps, a.opset)
-    add_sherpa_metadata(out / "acoustic.onnx")
+    print(f"[export] acoustic -> acoustic.onnx (language baked in: {lang_name(lid)}, slot {lid})")
+    export_acoustic(model, out / "acoustic.onnx", a.n_timesteps, lid, a.opset)
+    add_sherpa_metadata(out / "acoustic.onnx", 1, a.n_timesteps, lang_name(lid))
 
-    if not a.no_vocoder:
-        print("[export] fetching sherpa-onnx pre-built vocoder -> vocos-22khz-univ.onnx")
-        fetch_sherpa_vocoder(out)
+    print("[export] fetching vocoder + lfn frontend (tokens.txt, espeak-ng-data)")
+    fetch(out)
 
-    # tokens.txt
-    with open(out / "tokens.txt", "w", encoding="utf-8") as f:
-        for i, s in enumerate(symbols):
-            f.write(f"{s}\t{i}\n")
-
-    # metadata + tokenization recipe
-    meta = {
-        "sample_rate": SR, "n_mels": NMELS, "n_fft": NFFT, "hop": HOP, "win": WIN,
-        "fmin": FMIN, "fmax": FMAX, "n_timesteps": a.n_timesteps,
-        "n_base_symbols": N_BASE_SYMBOLS, "n_languages": N_LANGS, "n_vocab": len(symbols),
-        "acoustic_inputs": ["x (token ids)", "x_lengths", "scales=[temperature,length_scale]", "spks=[lang_id]"],
-        "tokenization": (
-            "text -> twi_cleaners (lfn IPA) -> map chars to ids via tokens.txt -> intersperse blank(0). "
-            "Language is selected by the speaker slot: spks = [lang_id]. No input language token, so "
-            "sherpa-onnx's built-in Matcha frontend (espeak-ng lfn voice + tokens.txt + add_blank) reproduces it."
-        ),
-    }
-    meta["vocoder_note"] = (
-        "vocos-22khz-univ.onnx outputs STFT (mag, x, y); reconstruct waveform via ISTFT "
-        "(n_fft=1024, hop=256, win=1024, hann). sherpa-onnx does this ISTFT in its runtime; "
-        "onnx_infer.py does it in Python."
-    )
-    (out / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
-
-    (out / "onnx_infer.py").write_text(_ONNX_INFER_DEMO)
-    print(f"[export] wrote tokens.txt + metadata.json + onnx_infer.py -> {out}")
+    (out / "metadata.json").write_text(json.dumps({
+        "sample_rate": SR, "n_speakers": 1, "n_timesteps": a.n_timesteps,
+        "language": lang_name(lid), "baked_language_id": lid,
+        "deploy": "sherpa-onnx (espeak-free); single-speaker, language baked in at export",
+    }, indent=2, ensure_ascii=False))
+    (out / "sherpa_infer.py").write_text(_SHERPA_DEMO)
+    print(f"[export] sherpa-onnx bundle ready -> {out}")
+    print("[export] try:  python sherpa_infer.py --text 'Akwaaba' --sid 2 --out hi.wav")
 
 
-_ONNX_INFER_DEMO = '''#!/usr/bin/env python3
-"""Standalone ONNX inference for a Ghana Voice export bundle.
+_SHERPA_DEMO = '''#!/usr/bin/env python3
+"""Espeak-free TTS via sherpa-onnx (no phonemizer/espeak pip or apt needed).
 
-    python onnx_infer.py --language "Asante Twi" --text "Akwaaba!" --out hello.wav
+    pip install sherpa-onnx soundfile
+    python sherpa_infer.py --text "Akwaaba, wo ho te sɛn?" --out hello.wav
 
-Needs: onnxruntime, torch, soundfile, and the ghanavoice/matcha package (for tokenization).
+The language was baked in at export time, so this is a single-speaker model (sid=0).
 """
 import argparse
 from pathlib import Path
-import numpy as np, onnxruntime as ort, soundfile as sf, torch
-from matcha.text import text_to_sequence
-from matcha.text.cleaners import twi_cleaners
-from matcha.utils.utils import intersperse
-from ghanavoice.languages import resolve
+import sherpa_onnx, soundfile as sf
 
 HERE = Path(__file__).parent
-_ac = ort.InferenceSession(str(HERE / "acoustic.onnx"))
-_vo = ort.InferenceSession(str(HERE / "vocos-22khz-univ.onnx"))
 
 
-def synth(text, language, temperature=0.3, length_scale=1.0):
-    lid = resolve(language)
-    seq, _ = text_to_sequence(twi_cleaners(text), ["twi_phonemes"])
-    tokens = intersperse(seq, 0)  # no language token; language via spks slot
-    mel, _ = _ac.run(["mel", "mel_lengths"], {
-        "x": np.array([tokens], np.int64), "x_lengths": np.array([len(tokens)], np.int64),
-        "scales": np.array([temperature, length_scale], np.float32), "spks": np.array([lid], np.int64)})
-    mag, xr, yi = _vo.run(["mag", "x", "y"], {"mels": mel})
-    S = torch.from_numpy(mag) * torch.complex(torch.from_numpy(xr), torch.from_numpy(yi))
-    return torch.istft(S, 1024, 256, 1024, torch.hann_window(1024), center=True).squeeze().numpy()
+def build():
+    return sherpa_onnx.OfflineTts(sherpa_onnx.OfflineTtsConfig(
+        model=sherpa_onnx.OfflineTtsModelConfig(
+            matcha=sherpa_onnx.OfflineTtsMatchaModelConfig(
+                acoustic_model=str(HERE / "acoustic.onnx"),
+                vocoder=str(HERE / "vocos-22khz-univ.onnx"),
+                lexicon="", tokens=str(HERE / "tokens.txt"),
+                data_dir=str(HERE / "espeak-ng-data")),
+            num_threads=2)))
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser()
-    p.add_argument("--language", required=True)
-    p.add_argument("--text", required=True)
-    p.add_argument("--out", required=True)
-    p.add_argument("--temperature", type=float, default=0.3)
-    a = p.parse_args()
-    sf.write(a.out, synth(a.text, a.language, a.temperature), 22050)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--text", required=True)
+    ap.add_argument("--sid", type=int, default=0, help="single-speaker model; leave at 0")
+    ap.add_argument("--speed", type=float, default=1.0)
+    ap.add_argument("--out", required=True)
+    a = ap.parse_args()
+    audio = build().generate(a.text, sid=a.sid, speed=a.speed)
+    sf.write(a.out, audio.samples, audio.sample_rate)
     print("wrote", a.out)
 '''
 

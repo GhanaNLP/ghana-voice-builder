@@ -57,7 +57,11 @@ def main():
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--max-epochs", type=int, default=200)
-    p.add_argument("--patience", type=int, default=10)
+    p.add_argument("--patience", type=int, default=3)
+    p.add_argument("--keep-all", action="store_true", default=True,
+                   help="Also save a per-epoch checkpoint (epochNNN.ckpt); nothing is overwritten/deleted")
+    p.add_argument("--no-keep-all", dest="keep_all", action="store_false",
+                   help="Keep only best.ckpt + last.ckpt (save disk)")
     p.add_argument("--num-workers", type=int, default=8)
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--log-every", type=int, default=25)
@@ -133,6 +137,8 @@ def main():
         improved = v < best - 1e-4
         print(f"[train] epoch {epoch}: val diff={v:.4f} (best {best:.4f}) {'IMPROVED' if improved else ''}", flush=True)
         save_ckpt(model, out / "last.ckpt", epoch, v)
+        if a.keep_all:
+            save_ckpt(model, out / f"epoch{epoch:03d}.ckpt", epoch, v)
         if improved:
             best, wait = v, 0
             save_ckpt(model, out / "best.ckpt", epoch, v)

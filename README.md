@@ -41,8 +41,8 @@ ghanavoice train --data ./prepped --out ./my_voice
 ghanavoice synthesize --model ./my_voice/best.ckpt \
     --language "Asante Twi" --text "Akwaaba!" --out hello.wav
 
-# 4. (optional) Export to ONNX for on-device / sherpa-onnx deployment
-ghanavoice export-onnx --model ./my_voice/best.ckpt --out ./onnx
+# 4. (optional) Export an espeak-free sherpa-onnx bundle for on-device deployment
+ghanavoice export-onnx --model ./my_voice/best.ckpt --language "Asante Twi" --out ./onnx
 ```
 
 Multiple languages: just include rows for each language in your data — the base model handles
@@ -84,31 +84,39 @@ Audio: mono WAV, any sample rate (resampled internally). **~5 hours per language
 
 The base model is public and downloaded automatically — no setup needed.
 
-## Deploy (ONNX / sherpa-onnx)
-`ghanavoice export-onnx --model my_voice/best.ckpt --out onnx/` writes a self-contained bundle:
+## Deploy (espeak-free sherpa-onnx)
+```bash
+ghanavoice export-onnx --model my_voice/best.ckpt --language "Asante Twi" --out onnx/
+```
+writes a self-contained, **espeak-free** bundle that sherpa-onnx runs end-to-end — no
+`espeak`/`phonemizer` pip or apt package needed (sherpa-onnx has espeak-ng compiled in and
+phonemizes with the bundled data):
 ```
 onnx/
-├── acoustic.onnx           # Matcha acoustic model (tagged with sherpa-onnx metadata)
+├── acoustic.onnx           # Matcha acoustic model (single-speaker; language baked in)
 ├── vocos-22khz-univ.onnx   # sherpa-onnx's pre-built universal Vocos vocoder (mel → STFT)
-├── tokens.txt              # symbol → id
-├── metadata.json           # mel config, language ids, tokenization recipe
-└── onnx_infer.py           # runnable demo: text → audio via ONNX Runtime
+├── tokens.txt              # symbol → id (lfn/base symbol set)
+├── espeak-ng-data/         # espeak-ng data incl. the lfn voice — so no system espeak is needed
+├── metadata.json           # config + baked language
+└── sherpa_infer.py         # runnable espeak-free demo (sherpa_onnx.OfflineTts)
 ```
-Run it anywhere ONNX Runtime is available (Python demo, or embed in an app):
+Run it anywhere `sherpa-onnx` is installed (Python, or embed the same config in C++/Kotlin/Swift):
 ```bash
-python onnx/onnx_infer.py --language "Asante Twi" --text "Akwaaba!" --out hello.wav
+pip install sherpa-onnx soundfile
+python onnx/sherpa_infer.py --text "Fa nifa so kɔ anim kakra." --out hello.wav
 ```
-Note: the vocoder ONNX emits the STFT (`mag,x,y`); the final **ISTFT** is done by the runtime
-(sherpa-onnx does it in C++; `onnx_infer.py` does it in Python). The text frontend (lfn phonemes
-+ a language token) is ours, so tokenization follows `metadata.json`/`onnx_infer.py` rather than
-sherpa-onnx's built-in Matcha frontend.
+The language you pass to `export-onnx` is **baked into the acoustic model** (its speaker-slot
+embedding becomes a constant), so the exported model is a plain single-speaker Matcha model —
+exactly the shape sherpa-onnx's built-in Matcha frontend expects. sherpa-onnx phonemizes the text
+itself (lfn voice, from `espeak-ng-data/`) and does the final ISTFT in C++. Export one bundle per
+language.
 
 ## Status
 - [x] 42-language registry, vendored Matcha engine
 - [x] `ghanavoice prepare` — phonemize + mel + filter + stats (HF & local)
 - [x] `ghanavoice train` — finetune loop + checkpointing + early stopping (+ optional HF push)
 - [x] `ghanavoice synthesize` — inference; **pretrained Vocos by default** (HiFiGAN / finetuned Vocos optional)
-- [x] `ghanavoice export-onnx` — export to ONNX for on-device / sherpa-onnx deployment
+- [x] `ghanavoice export-onnx` — export an **espeak-free** sherpa-onnx bundle for on-device deployment
 
 ## License / credits
 Matcha-TTS code © its authors (see vendored headers). Base models by GhanaNLP Community.
