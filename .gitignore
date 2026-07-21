@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.so
+build/
+*.egg-info/
+prepped/
+my_voice/
+*.ckpt
+*.pt
+*.wav
+!examples/**/*.wav
+.venv/

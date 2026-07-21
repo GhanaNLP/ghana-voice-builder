@@ -1,0 +1,13 @@
+torch>=2.0
+torchaudio>=2.0
+numpy
+soundfile
+matplotlib
+Cython
+phonemizer
+datasets>=2.14
+huggingface_hub
+tqdm
+pyyaml
+vocos
+wget
